@@ -1,106 +1,176 @@
 import streamlit as st
-import requests
-from bs4 import BeautifulSoup
 import time
-import smtplib
-from email.message import EmailMessage
+import random
+import sys
 from datetime import datetime
-import os
+from bs4 import BeautifulSoup
+import urllib.parse
 
-# --- PAGE CONFIG ---
-st.set_page_config(
-    page_title="T20 Ticket Monitor",
-    page_icon="🏏",
-    layout="centered"
-)
+# Try to import curl_cffi for browser impersonation (fixes 403 errors)
+try:
+    from curl_cffi import requests
+    USING_CURL_CFFI = True
+except ImportError:
+    import requests
+    USING_CURL_CFFI = False
 
-# --- DEFAULT CONFIGURATION ---
-DEFAULT_URL = "https://in.bookmyshow.com/sports/canada-vs-united-arab-emirates-icc-men-s-t20-wc-2026/ET00474012"
+# --- CONFIGURATION & CONSTANTS ---
+PAGE_TITLE = "🏏 T20 Ticket Monitor"
+PAGE_ICON = "🎟️"
+
+# Keywords
 SUCCESS_KEYWORDS = ["Login to book", "Book Now", "Select Seats", "Buy Tickets"]
 WAIT_KEYWORDS = ["Coming Soon", "Notify Me", "Interested", "Not Available"]
 
+# User Agents for fallback
+USER_AGENTS = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
+]
+
 # --- FUNCTIONS ---
 
-def send_email(sender_email, sender_password, receiver_email, event_url):
-    """Sends an email notification using SMTP."""
-    msg = EmailMessage()
-    msg.set_content(f"""
-    URGENT: CRICKET TICKETS MIGHT BE LIVE!
-    
-    The monitor detected a change in status for the T20 World Cup Match.
-    
-    Link: {event_url}
-    
-    Go book now!
-    """)
-
-    msg['Subject'] = '🏏 ALERT: Tickets Available (BMS Monitor)'
-    msg['From'] = sender_email
-    msg['To'] = receiver_email
-
-    try:
-        # Connect to Gmail SMTP (Standard port 587)
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls()
-        server.login(sender_email, sender_password)
-        server.send_message(msg)
-        server.quit()
-        return True, "Email sent successfully!"
-    except Exception as e:
-        return False, f"Email failed: {e}"
-
-def check_status(url):
-    """Checks the BMS page for booking keywords."""
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+def send_telegram_alert(token, chat_id, message):
+    """Sends a message via Telegram Bot API."""
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": message
     }
+    try:
+        # Use standard requests for API calls (curl_cffi not needed here)
+        if USING_CURL_CFFI:
+            import requests as std_requests
+            std_requests.post(url, json=payload, timeout=10)
+        else:
+            requests.post(url, json=payload, timeout=10)
+        return True
+    except Exception as e:
+        st.error(f"Telegram Error: {e}")
+        return False
+
+def send_whatsapp_alert(phone, api_key, message):
+    """Sends a message via CallMeBot (Free WhatsApp Gateway)."""
+    encoded_msg = urllib.parse.quote(message)
+    url = f"https://api.callmebot.com/whatsapp.php?phone={phone}&text={encoded_msg}&apikey={api_key}"
     
     try:
-        response = requests.get(url, headers=headers)
+        if USING_CURL_CFFI:
+            import requests as std_requests
+            std_requests.get(url, timeout=10)
+        else:
+            requests.get(url, timeout=10)
+        return True
+    except Exception as e:
+        st.error(f"WhatsApp Error: {e}")
+        return False
+
+def check_status(target_url):
+    """Checks the BMS page status."""
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    
+    headers = {
+        'User-Agent': random.choice(USER_AGENTS),
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Referer': 'https://in.bookmyshow.com/',
+        'Upgrade-Insecure-Requests': '1'
+    }
+
+    try:
+        if USING_CURL_CFFI:
+            response = requests.get(target_url, impersonate="chrome", headers=headers, timeout=15)
+        else:
+            response = requests.get(target_url, headers=headers, timeout=15)
+
         if response.status_code == 200:
             soup = BeautifulSoup(response.content, 'html.parser')
             text = soup.get_text()
 
-            # Logic: Check if success keywords exist OR wait keywords disappeared
+            # Logic
             found_success = any(keyword in text for keyword in SUCCESS_KEYWORDS)
             
-            # Note: We are less aggressive with "wait keywords" disappearing to avoid false positives on simple page load errors
-            # found_wait = any(keyword in text for keyword in WAIT_KEYWORDS) 
-
             if found_success:
-                return True, "Booking keywords found!"
+                return True, f"[{timestamp}] SUCCESS: Booking keywords found!"
             
-            return False, "Still waiting..."
+            # Anti-False Positive: If page is too small, it might be a captcha/block
+            if len(text) < 500:
+                return False, f"[{timestamp}] WARNING: Page content too short (Blocked?). Retrying..."
+
+            return False, f"[{timestamp}] Status: Still waiting... (Coming Soon detected)"
+        
+        elif response.status_code == 403:
+            return False, f"[{timestamp}] Blocked (403). Retrying..."
         else:
-            return False, f"Error: HTTP {response.status_code}"
+            return False, f"[{timestamp}] Error: HTTP {response.status_code}"
+
     except Exception as e:
-        return False, f"Error: {e}"
+        return False, f"[{timestamp}] Error: {str(e)}"
 
-# --- UI LAYOUT ---
+# --- STREAMLIT UI ---
 
-st.title("🏏 T20 World Cup Ticket Monitor")
-st.markdown("Monitor **India vs Namibia (Feb 12, 2026)** and get an email when tickets open.")
+st.set_page_config(page_title=PAGE_TITLE, page_icon=PAGE_ICON)
 
-# Sidebar for Credentials (safer UI)
+st.title(f"{PAGE_ICON} {PAGE_TITLE}")
+st.markdown("Monitor **BookMyShow** for ticket availability and get instant alerts.")
+
+# Sidebar - Settings
 with st.sidebar:
-    st.header("📧 Email Settings")
-    st.info("Use a Gmail App Password, not your login password.")
-    sender_email = st.text_input("Sender Gmail", placeholder="you@gmail.com")
-    sender_pass = st.text_input("Sender App Password", type="password", help="Go to Google Account > Security > 2-Step Verification > App Passwords")
-    receiver_email = st.text_input("Receiver Email", value=sender_email)
+    st.header("⚙️ Settings")
     
-    check_interval = st.slider("Check Interval (Seconds)", min_value=60, max_value=600, value=300)
+    target_url = st.text_input("Event URL", value="https://in.bookmyshow.com/sports/canada-vs-united-arab-emirates-icc-men-s-t20-wc-2026/ET00474012")
+    # target_url = st.text_input("Event URL", value="https://in.bookmyshow.com/sports/india-vs-namibia-icc-men-s-t20-wc-2026/ET00474011")
+    check_interval = st.number_input("Check Interval (seconds)", min_value=30, value=60)
+    
+    st.divider()
+    st.subheader("📢 Notifications")
+    
+    # Default to Telegram
+    notify_method = st.radio("Notification Method", ["Telegram", "WhatsApp (CallMeBot)", "None"], index=0)
+    
+    tg_token = ""
+    tg_chat_id = ""
+    wa_phone = ""
+    wa_key = ""
+    
+    if notify_method == "Telegram": # Option A
+        st.info("**Option A: Telegram (Recommended & Most Reliable)**")
+        with st.expander("Click here for setup instructions"):
+            st.markdown("""
+            1.  Open Telegram and search for **`@BotFather`**.
+            2.  Send the message: `/newbot`.
+            3.  Follow the steps (name your bot). It will give you a **Token** (e.g., `123456:ABC-DEF1234...`). **Copy this.**
+            4.  Now search for **`@userinfobot`** on Telegram and click Start. It will reply with your **Id** (e.g., `12345678`). **Copy this.**
+            5.  Enter these two values below.
+            """)
+        tg_token = st.text_input("Bot Token", value="8432333925:AAEL2c3H-A9v7zYcGQVeH0oNnaD9ICBWj3U", type="password", help="From @BotFather")
+        tg_chat_id = st.text_input("Chat ID", value="5812598196", help="From @userinfobot")
+        if st.button("Test Telegram"):
+            send_telegram_alert(tg_token, tg_chat_id, "Test Alert from BMS Monitor!")
+            st.success("Test sent!")
 
-# Main Area
-target_url = st.text_input("Event URL", value=DEFAULT_URL)
+    elif notify_method == "WhatsApp (CallMeBot)": # Option B
+        st.info("**Option B: WhatsApp (via CallMeBot)**")
+        with st.expander("Click here for setup instructions"):
+            st.markdown("""
+            1.  Save this number in your phone contacts: `+34 621 331 709` (Name it "CallMeBot").
+            2.  Send this exact message to that contact on WhatsApp: `I allow callmebot to send me messages`
+            3.  Wait 10-20 seconds. It will reply with your **API Key**.
+            4.  Enter your phone number (e.g., `+919999999999`) and this API Key below.
+            """)
+        wa_phone = st.text_input("Phone Number (with country code)", placeholder="+919876543210")
+        wa_key = st.text_input("API Key", type="password", help="Get from https://www.callmebot.com/blog/free-api-whatsapp-messages/")
+        if st.button("Test WhatsApp"):
+            send_whatsapp_alert(wa_phone, wa_key, "Test Alert from BMS Monitor!")
+            st.success("Test sent!")
 
+# Main Control
 col1, col2 = st.columns(2)
 with col1:
-    start_btn = st.button("Start Monitoring", type="primary")
+    start_btn = st.button("▶️ Start Monitoring", type="primary", use_container_width=True)
 with col2:
-    stop_btn = st.button("Stop")
+    stop_btn = st.button("⏹️ Stop", use_container_width=True)
 
-# Session state to handle loop
+# Session State
 if "monitoring" not in st.session_state:
     st.session_state.monitoring = False
 
@@ -109,41 +179,46 @@ if start_btn:
 if stop_btn:
     st.session_state.monitoring = False
 
-# --- MAIN LOOP ---
-status_placeholder = st.empty()
-log_placeholder = st.empty()
+# Monitoring Loop
+status_container = st.empty()
+log_container = st.empty()
 
 if st.session_state.monitoring:
-    if not (sender_email and sender_pass and receiver_email):
-        st.error("Please fill in email credentials in the sidebar first!")
-        st.session_state.monitoring = False
-    else:
-        st.success("Monitoring started... You can switch tabs, but keep this app active.")
+    if not USING_CURL_CFFI:
+        st.warning("⚠️ 'curl_cffi' not installed. Running in compatibility mode (higher risk of 403 blocks).")
+
+    st.toast("Monitoring started...")
+    
+    while st.session_state.monitoring:
+        is_live, msg = check_status(target_url)
         
-        while st.session_state.monitoring:
-            timestamp = datetime.now().strftime("%H:%M:%S")
-            is_live, message = check_status(target_url)
+        # UI Updates
+        if is_live:
+            status_container.success(msg)
+            st.balloons()
             
-            # Update UI
-            status_placeholder.metric(label="Last Check", value=timestamp, delta=message if is_live else "Waiting")
+            alert_msg = f"🚨 TICKETS LIVE! 🚨\n\nGo Book Now: {target_url}"
             
-            if is_live:
-                st.balloons()
-                st.warning("TICKETS DETECTED! Sending email...")
+            if notify_method == "Telegram" and tg_token and tg_chat_id:
+                send_telegram_alert(tg_token, tg_chat_id, alert_msg)
+                st.write("✅ Telegram Alert Sent!")
                 
-                success, email_msg = send_email(sender_email, sender_pass, receiver_email, target_url)
-                
-                if success:
-                    st.success(f"Notification sent to {receiver_email}!")
-                    st.session_state.monitoring = False # Stop after success
-                    break
-                else:
-                    st.error(email_msg)
-                    time.sleep(5) # Retry logic could go here
+            elif notify_method == "WhatsApp (CallMeBot)" and wa_phone and wa_key:
+                send_whatsapp_alert(wa_phone, wa_key, alert_msg)
+                st.write("✅ WhatsApp Alert Sent!")
             
-            # Wait
-            time.sleep(check_interval)
-            
-            # Needed to keep the script running in some Streamlit environments
-            # but in standard Streamlit, the loop blocks interactions. 
-            # This is fine for a personal monitor.
+            # Stop after success to avoid spamming
+            st.session_state.monitoring = False
+            break
+        
+        elif "Blocked" in msg:
+            status_container.error(msg)
+        else:
+            status_container.info(msg)
+        
+        # Wait
+        time.sleep(check_interval)
+        # Rerun loop logic handled by Streamlit's reactive nature/while loop
+
+    if not st.session_state.monitoring:
+        st.write("Monitoring stopped.")
