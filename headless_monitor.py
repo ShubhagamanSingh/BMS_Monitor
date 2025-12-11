@@ -7,12 +7,12 @@ import sys
 
 # --- CONFIGURATION ---
 # We get these from GitHub "Secrets" (Environment Variables)
-TARGET_URL = "https://in.bookmyshow.com/sports/delhi-icc-men-s-t20-wc-2026/ET00473562"
+TARGET_URL = "https://in.bookmyshow.com/sports/canada-vs-united-arab-emirates-icc-men-s-t20-wc-2026/ET00474012"
 GMAIL_USER = os.environ.get('GMAIL_USER')
 GMAIL_PASS = os.environ.get('GMAIL_PASS')
 RECEIVER_EMAIL = os.environ.get('RECEIVER_EMAIL')
 
-SUCCESS_KEYWORDS = ["Book Now", "Select Seats", "Buy Tickets"]
+SUCCESS_KEYWORDS = ["Login to book", "Book Now", "Select Seats", "Buy Tickets"]
 
 def send_alert():
     msg = EmailMessage()
