@@ -15,8 +15,8 @@ st.set_page_config(
 )
 
 # --- DEFAULT CONFIGURATION ---
-DEFAULT_URL = "https://in.bookmyshow.com/sports/delhi-icc-men-s-t20-wc-2026/ET00473562"
-SUCCESS_KEYWORDS = ["Book Now", "Select Seats", "Buy Tickets"]
+DEFAULT_URL = "https://in.bookmyshow.com/sports/canada-vs-united-arab-emirates-icc-men-s-t20-wc-2026/ET00474012"
+SUCCESS_KEYWORDS = ["Login to book", "Book Now", "Select Seats", "Buy Tickets"]
 WAIT_KEYWORDS = ["Coming Soon", "Notify Me", "Interested", "Not Available"]
 
 # --- FUNCTIONS ---
