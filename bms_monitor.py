@@ -2,9 +2,11 @@ import streamlit as st
 import time
 import random
 import sys
+import os
 from datetime import datetime
 from bs4 import BeautifulSoup
 import urllib.parse
+from dotenv import load_dotenv
 
 # Try to import curl_cffi for browser impersonation (fixes 403 errors)
 try:
@@ -13,6 +15,9 @@ try:
 except ImportError:
     import requests
     USING_CURL_CFFI = False
+
+# Load environment variables from .env file
+load_dotenv()
 
 # --- CONFIGURATION & CONSTANTS ---
 PAGE_TITLE = "🏏 T20 Ticket Monitor"
@@ -142,8 +147,28 @@ with st.sidebar:
             4.  Now search for **`@userinfobot`** on Telegram and click Start. It will reply with your **Id** (e.g., `12345678`). **Copy this.**
             5.  Enter these two values below.
             """)
-        tg_token = st.text_input("Bot Token", value="8432333925:AAEL2c3H-A9v7zYcGQVeH0oNnaD9ICBWj3U", type="password", help="From @BotFather")
-        tg_chat_id = st.text_input("Chat ID", value="5812598196", help="From @userinfobot")
+
+        # Initialize session state for credentials
+        if "tg_token" not in st.session_state:
+            st.session_state.tg_token = ""
+        if "tg_chat_id" not in st.session_state:
+            st.session_state.tg_chat_id = ""
+
+        with st.expander("Developer Sec"):
+            with st.form("unlock_form"):
+                password = st.text_input("Enter App Password to Autofill Credentials", type="password")
+                submitted = st.form_submit_button("Fill")
+                if submitted:
+                    if password == os.getenv("APP_PASSWORD"):
+                        st.session_state.tg_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+                        st.session_state.tg_chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
+                        st.success("Credentials autofilled!")
+                    else:
+                        st.error("Incorrect password.")
+ 
+        tg_token = st.text_input("Bot Token", value=st.session_state.tg_token, type="password", help="From @BotFather")
+        tg_chat_id = st.text_input("Chat ID", value=st.session_state.tg_chat_id, help="From @userinfobot")
+
         if st.button("Test Telegram"):
             send_telegram_alert(tg_token, tg_chat_id, "Test Alert from BMS Monitor!")
             st.success("Test sent!")
