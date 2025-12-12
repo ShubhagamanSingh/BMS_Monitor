@@ -154,10 +154,10 @@ with st.sidebar:
         if "tg_chat_id" not in st.session_state:
             st.session_state.tg_chat_id = ""
 
-        with st.expander("Developer Sec"):
+        with st.expander("For Developer"):
             with st.form("unlock_form"):
                 password = st.text_input("Enter App Password to Autofill Credentials", type="password")
-                submitted = st.form_submit_button("Fill")
+                submitted = st.form_submit_button("Show Magic")
                 if submitted:
                     if password == os.getenv("APP_PASSWORD"):
                         st.session_state.tg_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
