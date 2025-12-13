@@ -122,8 +122,8 @@ st.markdown("Monitor **BookMyShow** for ticket availability and get instant aler
 with st.sidebar:
     st.header("⚙️ Settings")
     
-    target_url = st.text_input("Event URL", value="https://in.bookmyshow.com/sports/canada-vs-united-arab-emirates-icc-men-s-t20-wc-2026/ET00474012")
-    # target_url = st.text_input("Event URL", value="https://in.bookmyshow.com/sports/india-vs-namibia-icc-men-s-t20-wc-2026/ET00474011")
+    # target_url = st.text_input("Event URL", value="https://in.bookmyshow.com/sports/canada-vs-united-arab-emirates-icc-men-s-t20-wc-2026/ET00474012")
+    target_url = st.text_input("Event URL", value="https://in.bookmyshow.com/sports/india-vs-namibia-icc-men-s-t20-wc-2026/ET00474011")
     check_interval = st.number_input("Check Interval (seconds)", min_value=30, value=60)
     
     st.divider()
